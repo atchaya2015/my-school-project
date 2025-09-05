@@ -1,6 +1,22 @@
 import { pool } from "@/lib/db";
-import { writeFile } from "fs/promises";
-import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import { Readable } from "stream";
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.CLOUDINARY_KEY,
+  api_secret: process.env.CLOUDINARY_SECRET,
+});
+
+async function uploadToCloudinary(fileBuffer) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "schools" },
+      (error, result) => (result ? resolve(result) : reject(error))
+    );
+    Readable.from(fileBuffer).pipe(stream);
+  });
+}
 
 export async function POST(req) {
   try {
@@ -18,22 +34,20 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Invalid file upload" }), { status: 400 });
     }
 
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const filename = Date.now() + "_" + file.name;
+    // Convert file to buffer
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-    // Use /tmp on Vercel (serverless)
-    const filePath = path.join("/tmp", filename);
-    await writeFile(filePath, bytes);
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(fileBuffer);
+    const imageUrl = result.secure_url;
 
-    const imagePath = `/tmp/${filename}`; // change if you use cloud storage
-
-    // Use pool to insert into Aiven MySQL
+    // Insert into Aiven MySQL
     await pool.query(
       "INSERT INTO schools (name, address, city, state, contact, email_id, image) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [name, address, city, state, contact, email_id, imagePath]
+      [name, address, city, state, contact, email_id, imageUrl]
     );
 
-    return new Response(JSON.stringify({ message: "School added successfully!" }), { status: 200 });
+    return new Response(JSON.stringify({ message: "School added successfully!", imageUrl }), { status: 200 });
   } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
