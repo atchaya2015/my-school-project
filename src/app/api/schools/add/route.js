@@ -20,11 +20,14 @@ export async function POST(req) {
 
     const bytes = Buffer.from(await file.arrayBuffer());
     const filename = Date.now() + "_" + file.name;
-    const filePath = path.join(process.cwd(), "public/schoolImages", filename);
+
+    // Use /tmp on Vercel (serverless)
+    const filePath = path.join("/tmp", filename);
     await writeFile(filePath, bytes);
 
-    const imagePath = `/schoolImages/${filename}`;
+    const imagePath = `/tmp/${filename}`; // change if you use cloud storage
 
+    // Use pool to insert into Aiven MySQL
     await pool.query(
       "INSERT INTO schools (name, address, city, state, contact, email_id, image) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [name, address, city, state, contact, email_id, imagePath]
@@ -32,6 +35,7 @@ export async function POST(req) {
 
     return new Response(JSON.stringify({ message: "School added successfully!" }), { status: 200 });
   } catch (err) {
+    console.error(err);
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
 }
